@@ -13,7 +13,7 @@ from src.double_dqn import train as train_ddqn
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--roll-number', required=True)
+    ap.add_argument('--roll-number', default='DA25M609')
     ap.add_argument('--output-dir', default='artifacts')
     ap.add_argument('--submission-dir', default='submissions')
     ap.add_argument('--smoke', action='store_true')
@@ -31,22 +31,22 @@ def main():
     else:
         qeps, reps, a2cs, ppos, ddqns = 12000, 8000, 600000, 1000000, 700000
 
-    print('1/5 Tabular Q-Learning')
-    q = train_q(cfg, episodes=qeps)
-    save_table(q, out / 'tabular_q.npz')
-
-    print('2/5 REINFORCE + baseline')
-    n = train_reinforce(cfg, episodes=reps)
-    torch.save(n.state_dict(), out / 'reinforce.pt')
-
-    print('3/5 A2C')
-    n = train_a2c(cfg, total_steps=a2cs)
-    torch.save(n.state_dict(), out / 'a2c.pt')
-
-    print('4/5 PPO')
-    n = train_ppo(cfg, total_steps=ppos, rollout_steps=min(2048, ppos))
-    torch.save(n.state_dict(), out / 'ppo.pt')
-
+    # print('1/5 Tabular Q-Learning')
+    # q = train_q(cfg, episodes=qeps)
+    # save_table(q, out / 'tabular_q.npz')
+    #
+    # print('2/5 REINFORCE + baseline')
+    # n = train_reinforce(cfg, episodes=reps)
+    # torch.save(n.state_dict(), out / 'reinforce.pt')
+    #
+    # print('3/5 A2C')
+    # n = train_a2c(cfg, total_steps=a2cs)
+    # torch.save(n.state_dict(), out / 'a2c.pt')
+    #
+    # print('4/5 PPO')
+    # n = train_ppo(cfg, total_steps=ppos, rollout_steps=min(2048, ppos))
+    # torch.save(n.state_dict(), out / 'ppo.pt')
+    #
     print('5/5 Double DQN')
     n = train_ddqn(
         cfg,

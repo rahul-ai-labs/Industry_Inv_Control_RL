@@ -9,7 +9,7 @@ def load(path):
     spec=importlib.util.spec_from_file_location('p_'+path.stem,path); mod=importlib.util.module_from_spec(spec); sys.modules[spec.name]=mod; spec.loader.exec_module(mod); return mod.run_policy
 
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument('--roll-number',required=True); ap.add_argument('--submission-dir',default='submissions'); args=ap.parse_args(); cfg=generate_student_config(args.roll_number)
+    ap=argparse.ArgumentParser(); ap.add_argument('--roll-number',default='DA25M609'); ap.add_argument('--submission-dir',default='submissions'); args=ap.parse_args(); cfg=generate_student_config(args.roll_number)
     scenarios=['stationary','seasonal','trend','shock','mixed']; seeds=list(range(7001,7011)); rows=[]
     for f in ['policy_tabular_q.py','policy_reinforce.py','policy_a2c.py','policy_ppo.py','policy_double_dqn.py']:
         p=Path(args.submission_dir)/f; pol=load(p); rs=evaluate_policy(cfg,pol,seeds,scenarios)
