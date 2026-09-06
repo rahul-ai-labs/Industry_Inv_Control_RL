@@ -1,76 +1,45 @@
 import os
 import numpy as np
-import torch
-from torch import nn
 
-PRODUCT_VOLUMES = np.asarray([2.0, 3.0, 1.5], dtype=np.float32)
+REF=np.asarray([30.,25.,35.],dtype=np.float32)
+LEAD=np.asarray([3.,2.,1.],dtype=np.float32)
 
-
-def _mean_demand(o):
-    h = np.asarray(o["demand_history"], dtype=np.float32)
-    fb = np.asarray([30.0, 25.0, 35.0], dtype=np.float32)
-    z = []
+def _demand(o):
+    h=np.asarray(o["demand_history"],dtype=np.float32)
+    w0=np.asarray([.05,.07,.10,.13,.17,.21,.27],dtype=np.float32)
+    out=np.empty(3,dtype=np.float32)
     for p in range(3):
-        v = h[:, p]
-        v = v[v > 0]
-        z.append(v.mean() if v.size else fb[p])
-    return np.asarray(z, dtype=np.float32)
-
-
-def _enc(o):
-    inv = np.asarray(o["inventory"], dtype=np.float32)
-    pipe = np.asarray(o["arrival_pipeline"], dtype=np.float32)
-    hist = np.asarray(o["demand_history"], dtype=np.float32)
-    day = np.asarray(o["day"], dtype=np.float32)
-    util = np.asarray(o["capacity_utilisation"], dtype=np.float32)
-    recent = _mean_demand(o)
-    pos = inv + pipe.sum(axis=1)
-    return np.concatenate(
-        [
-            np.clip(inv / 250.0, 0, 4),
-            np.clip(pipe.reshape(-1) / 100.0, 0, 5),
-            np.clip(hist.reshape(-1) / 100.0, 0, 5),
-            np.clip(day / 50.0, 0, 1),
-            np.clip(util, 0, 1.5),
-            np.clip(recent / 60.0, 0, 3),
-            np.clip(pos / 300.0, 0, 4),
-        ]
-    ).astype(np.float32)
-
-
-def _project(o, q):
-    q = np.clip((np.asarray(q, dtype=np.int64) // 10) * 10, 0, 100)
-    inv = np.asarray(o["inventory"], dtype=np.float32)
-    pipe = np.asarray(o["arrival_pipeline"], dtype=np.float32).sum(axis=1)
-    budget = max(0.0, 980.0 - float(np.dot(inv + pipe, PRODUCT_VOLUMES)))
-    rv = float(np.dot(q, PRODUCT_VOLUMES))
-    if rv <= budget + 1e-9 or rv <= 0:
-        return q
-    return np.clip(np.floor((q * (budget / rv)) / 10.0) * 10.0, 0, 100).astype(np.int64)
-
-
-_MODEL = os.path.join(os.path.dirname(__file__), "tabular_q.npz")
-_d = np.load(_MODEL)
-_states = _d["states"]
-_q = _d["q_values"]
-_table = {tuple(map(int, s)): v for s, v in zip(_states, _q)}
-
+        v=h[:,p]; m=v>0
+        if not np.any(m): out[p]=REF[p]; continue
+        w=w0[m]; w=w/w.sum(); r=float(np.dot(v[m],w)); c=min(int(m.sum()),7)/7.
+        out[p]=c*r+(1.-c)*REF[p]
+    return np.maximum(out,1.)
 
 def _state(o):
-    inv = np.asarray(o["inventory"], dtype=np.float32)
-    pipe = np.asarray(o["arrival_pipeline"], dtype=np.float32).sum(axis=1)
-    demand = _mean_demand(o)
-    cover = (inv + pipe) / np.maximum(demand, 1.0)
-    cb = np.digitize(cover, [0.75, 1.5, 2.25, 3.0, 4.0]).astype(int)
-    db = np.digitize(demand, [22.5, 30.0, 37.5, 45.0]).astype(int)
-    day = int(np.asarray(o["day"]).reshape(-1)[0])
-    phase = min(day // 10, 4)
-    util = float(np.asarray(o["capacity_utilisation"]).reshape(-1)[0])
-    ub = int(np.digitize([util], [0.35, 0.55, 0.75, 0.9])[0])
-    return tuple(cb.tolist() + db.tolist() + [phase, ub])
+    inv=np.asarray(o["inventory"],dtype=np.float32)
+    pipe=np.asarray(o["arrival_pipeline"],dtype=np.float32)
+    dem=_demand(o); pos=inv+pipe.sum(axis=1)
+    cover=pos/np.maximum(dem*LEAD,1.)
+    cb=np.digitize(cover,[.5,.8,1.,1.25,1.6]).astype(int)
+    db=np.digitize(dem,[22.5,30.,37.5,45.]).astype(int)
+    day=int(np.asarray(o["day"]).reshape(-1)[0]); phase=min(max((day-1)//10,0),4)
+    util=float(np.asarray(o["capacity_utilisation"]).reshape(-1)[0])
+    ub=int(np.digitize([util],[.35,.55,.75,.9])[0])
+    return tuple(cb.tolist()+db.tolist()+[phase,ub])
 
+def _fallback(o):
+    inv=np.asarray(o["inventory"],dtype=np.float32)
+    pipe=np.asarray(o["arrival_pipeline"],dtype=np.float32)
+    dem=_demand(o); pos=inv+pipe.sum(axis=1)
+    target=dem*(LEAD+.75)
+    needed=np.maximum(target-pos,0.)
+    q=np.clip(np.ceil(needed/10.)*10.,0,100)
+    return (q/10.).astype(np.int64)
+
+_d=np.load(os.path.join(os.path.dirname(__file__),"tabular_q.npz"))
+_table={tuple(map(int,s)):v for s,v in zip(_d["states"],_d["q_values"])}
 
 def run_policy(observation):
-    v = _table.get(_state(observation))
-    a = np.zeros(3, dtype=np.int64) if v is None else np.argmax(v, axis=1)
-    return _project(observation, a * 10).astype(int).tolist()
+    v=_table.get(_state(observation))
+    action=_fallback(observation) if v is None else np.argmax(v,axis=1).astype(np.int64)
+    return (action*10).astype(int).tolist()
